@@ -8,14 +8,15 @@ const PersonDetection = () => {
   const videoRef = useRef(null);
   const [model, setModel] = useState(null);
   const [humanBoxes, setHumanBoxes] = useState([]);
+  const [objectBoxes, setObjectBoxes] = useState([]);
   const [remoteEnabled, setRemoteEnabled] = useState(false);
   const [speechTranscript, setSpeechTranscript] = useState("");
 
   // Screen & Video Display Scaling
   const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 0;
   const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 0;
-  const videoWidth = screenWidth * (2 / 3);
-  const videoHeight = screenHeight;
+  // const videoWidth = screenWidth * (2 / 3);
+  // const videoHeight = screenHeight;
 
   // Initialize model
   useEffect(() => {
@@ -112,7 +113,18 @@ const PersonDetection = () => {
             confidence: pred.score
           }));
 
+        // Filter for object detections and convert to our format with scaling
+        const objects = predictions.filter(pred => pred.class !== 'person').map(pred => ({
+          x1: Math.round(pred.bbox[0] * scaleX + offsetX),
+          y1: Math.round(pred.bbox[1] * scaleY + offsetY),
+          x2: Math.round((pred.bbox[0] + pred.bbox[2]) * scaleX + offsetX),
+          y2: Math.round((pred.bbox[1] + pred.bbox[3]) * scaleY + offsetY),
+          confidence: pred.score,
+          label: pred.class
+        }));        
+
         setHumanBoxes(personDetections);
+        setObjectBoxes(objects);
       } catch (error) {
         console.error("❌ Error during detection:", error);
       }
@@ -158,7 +170,7 @@ const PersonDetection = () => {
               disabled={!remoteEnabled}
               className="control-btn"
             >
-              ▲
+              ▴
             </button>
             <div className="horizontal-controls">
               <button
@@ -167,7 +179,7 @@ const PersonDetection = () => {
                 disabled={!remoteEnabled}
                 className="control-btn"
               >
-                ◄
+                ◂
               </button>
               <button
                 onMouseDown={() => handleCommand("right")}
@@ -175,7 +187,7 @@ const PersonDetection = () => {
                 disabled={!remoteEnabled}
                 className="control-btn"
               >
-                ►
+                ▸
               </button>
             </div>
             <button
@@ -184,7 +196,7 @@ const PersonDetection = () => {
               disabled={!remoteEnabled}
               className="control-btn"
             >
-              ▼
+              ▾
             </button>
           </div>
         </div>
@@ -209,7 +221,7 @@ const PersonDetection = () => {
           {humanBoxes.map((box, index) => (
             <div key={index}>
               <div
-                className="bounding-box"
+                className="bounding-box-red"
                 style={{
                   left: `${box.x1}px`,
                   top: `${box.y1}px`,
@@ -218,13 +230,37 @@ const PersonDetection = () => {
                 }}
               />
               <span
-                className="bounding-box-label"
+                className="bounding-box-label-red"
                 style={{
                   left: `${box.x1}px`,
                   top: `${Math.max(0, box.y1 - 24)}px`,
                 }}
               >
                 Person {index + 1} ({(box.confidence * 100).toFixed(1)}%)
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="bounding-box-overlay">
+          {objectBoxes.map((box, index) => (
+            <div key={index}>
+              <div
+                className="bounding-box-blue"
+                style={{
+                  left: `${box.x1}px`,
+                  top: `${box.y1}px`,
+                  width: `${box.x2 - box.x1}px`,
+                  height: `${box.y2 - box.y1}px`,
+                }}
+              />
+              <span
+                className="bounding-box-label-blue"
+                style={{
+                  left: `${box.x1}px`,
+                  top: `${Math.max(0, box.y1 - 24)}px`,
+                }}
+              >
+                {box.label} ({(box.confidence * 100).toFixed(1)}%)
               </span>
             </div>
           ))}
