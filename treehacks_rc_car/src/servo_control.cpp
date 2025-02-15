@@ -9,21 +9,22 @@ void ServoControl::begin() {
 }
 
 void ServoControl::testMovement() {
-  Serial.println("Sweeping servo 0->180 degrees");
-  for(int angle = 0; angle <= 180; angle += 10) {
-    int pulseWidth = map(angle, 0, 180, 500, 2400);
-    int duty = (pulseWidth * pwmFrequency) / 1000000.0 * (pow(2, pwmResolution) - 1);
-    ledcWrite(pwmChannel, duty);
-    Serial.printf("Angle: %d°\n", angle);
-    delay(500);
-  }
+  Serial.println("Starting 30-second oscillation between 60° and 120°");
+  unsigned long startTime = millis();
   
-  Serial.println("Sweeping back 180->0 degrees");
-  for(int angle = 180; angle >= 0; angle -= 10) {
-    int pulseWidth = map(angle, 0, 180, 500, 2400);
-    int duty = (pulseWidth * pwmFrequency) / 1000000.0 * (pow(2, pwmResolution) - 1);
-    ledcWrite(pwmChannel, duty);
-    Serial.printf("Angle: %d°\n", angle);
-    delay(500);
+  while (millis() - startTime < 30000) {
+    moveToAngle(60);
+    delay(1000);
+    moveToAngle(120);
+    delay(1000);
   }
+  moveToAngle(90);
+  Serial.println("Oscillation complete");
+}
+
+void ServoControl::moveToAngle(int angle) {
+  int pulseWidth = map(angle, 0, 180, 500, 2400);
+  int duty = (pulseWidth * pwmFrequency) * (1 << pwmResolution) / 1000000;
+  ledcWrite(pwmChannel, duty);
+  Serial.printf("Servo moved to %d°\n", angle);
 }
