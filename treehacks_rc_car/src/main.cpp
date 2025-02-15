@@ -1,32 +1,16 @@
 #include <Arduino.h>
-#include <WiFi.h>
-#include <WebServer.h>
+#include "servo_control.h"
 
-const char* ssid = "Treehacks-2025";
-const char* password = "treehacks2025!";
-
-WebServer server(80);
+ServoControl servoControl;
 
 void setup() {
-    Serial.begin(115200);
-    WiFi.begin(ssid, password);
-
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(1000);
-        Serial.println("Connecting to WiFi...");
-    }
-
-    Serial.println("Connected to WiFi");
-    Serial.print("IP Address: ");
-    Serial.println(WiFi.localIP());
-
-    server.on("/", []() {
-        server.send(200, "text/plain", "ESP32 Web Server is Running!");
-    });
-
-    server.begin();
+  Serial.begin(115200);
+  servoControl.begin();
+  Serial.println("Starting servo test...");
+  servoControl.testMovement();
+  Serial.println("Servo test complete!");
 }
 
 void loop() {
-    server.handleClient();
+  // Empty
 }
