@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as cocoSsd from '@tensorflow-models/coco-ssd';
+import ControlButtons from './ControlButtons';
 
 const PersonDetection = () => {
   const videoRef = useRef(null);
@@ -10,7 +11,9 @@ const PersonDetection = () => {
   const [humanBoxes, setHumanBoxes] = useState([]);
   const [objectBoxes, setObjectBoxes] = useState([]);
   const [remoteEnabled, setRemoteEnabled] = useState(false);
-  const [speechTranscript, setSpeechTranscript] = useState("");
+  const [task, setTask] = useState("");
+  const [targetObject, setTargetObject] = useState('person');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Screen & Video Display Scaling
   const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 0;
@@ -58,7 +61,43 @@ const PersonDetection = () => {
     };
   }, []);
 
-  // Perform detection
+  const handleTaskSubmit = async (e) => {
+    e.preventDefault();
+    if (!task.trim()) return;
+
+    setIsProcessing(true);
+    try {
+      // Parse the task using OpenAI
+      const response = await fetch('/api/parse-task', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ task }),
+      });
+
+      if (!response.ok) throw new Error('Failed to parse task');
+      
+      const data = await response.json();
+      setTargetObject(data.targetObject);
+
+      // Broadcast the target object via UDP
+      await fetch('/api/control', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ direction: `target:${data.targetObject}` }),
+      });
+
+    } catch (error) {
+      console.error('Error processing task:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Modify the detection effect to handle target objects
   useEffect(() => {
     if (!model || !videoRef.current) return;
 
@@ -102,29 +141,23 @@ const PersonDetection = () => {
           offsetY = (displayHeight - videoDisplayHeight) / 2;
         }
 
-        // Filter for person detections and convert to our format with scaling
-        const personDetections = predictions
-          .filter(pred => pred.class === 'person')
-          .map(pred => ({
-            x1: Math.round(pred.bbox[0] * scaleX + offsetX),
-            y1: Math.round(pred.bbox[1] * scaleY + offsetY),
-            x2: Math.round((pred.bbox[0] + pred.bbox[2]) * scaleX + offsetX),
-            y2: Math.round((pred.bbox[1] + pred.bbox[3]) * scaleY + offsetY),
-            confidence: pred.score
-          }));
-
-        // Filter for object detections and convert to our format with scaling
-        const objects = predictions.filter(pred => pred.class !== 'person').map(pred => ({
+        // Filter and process detections based on target object
+        const detections = predictions.map(pred => ({
           x1: Math.round(pred.bbox[0] * scaleX + offsetX),
           y1: Math.round(pred.bbox[1] * scaleY + offsetY),
           x2: Math.round((pred.bbox[0] + pred.bbox[2]) * scaleX + offsetX),
           y2: Math.round((pred.bbox[1] + pred.bbox[3]) * scaleY + offsetY),
           confidence: pred.score,
-          label: pred.class
-        }));        
+          label: pred.class,
+          isTarget: targetObject && pred.class === targetObject
+        }));
 
-        setHumanBoxes(personDetections);
-        setObjectBoxes(objects);
+        // Split into target and non-target objects
+        const targetBoxes = detections.filter(det => det.isTarget);
+        const otherBoxes = detections.filter(det => !det.isTarget);
+
+        setHumanBoxes(targetBoxes);
+        setObjectBoxes(otherBoxes);
       } catch (error) {
         console.error("❌ Error during detection:", error);
       }
@@ -139,12 +172,58 @@ const PersonDetection = () => {
         cancelAnimationFrame(animationFrameId);
       }
     };
-  }, [model]);
+  }, [model, targetObject]);
 
-  const handleCommand = (command) => {
-    if (!remoteEnabled) return;
-    console.log(`Command sent: ${command}`);
-  };
+  // Add keyboard control effect
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (!remoteEnabled) return;
+
+      const keyCommands = {
+        'ArrowUp': 'forward',
+        'ArrowDown': 'backward',
+        'ArrowLeft': 'left',
+        'ArrowRight': 'right'
+      };
+
+      const command = keyCommands[e.key];
+      if (command) {
+        e.preventDefault(); // Prevent page scroll
+        console.log(`Sending keyboard command: ${command}`);
+        fetch('/api/control', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ direction: command }),
+        });
+      }
+    };
+
+    const handleKeyUp = (e) => {
+      if (!remoteEnabled) return;
+
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        e.preventDefault();
+        console.log('Sending stop command');
+        fetch('/api/control', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ direction: 'stop' }),
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [remoteEnabled]);
 
   return (
     <div className="container">
@@ -163,48 +242,40 @@ const PersonDetection = () => {
           </label>
           <p>Remote Override: {remoteEnabled ? "ON" : "OFF"}</p>
 
-          <div className="control-buttons">
-            <button
-              onMouseDown={() => handleCommand("forward")}
-              onMouseUp={() => handleCommand("stop")}
-              disabled={!remoteEnabled}
-              className="control-btn"
-            >
-              ▴
-            </button>
-            <div className="horizontal-controls">
-              <button
-                onMouseDown={() => handleCommand("left")}
-                onMouseUp={() => handleCommand("stop")}
-                disabled={!remoteEnabled}
-                className="control-btn"
-              >
-                ◂
-              </button>
-              <button
-                onMouseDown={() => handleCommand("right")}
-                onMouseUp={() => handleCommand("stop")}
-                disabled={!remoteEnabled}
-                className="control-btn"
-              >
-                ▸
-              </button>
-            </div>
-            <button
-              onMouseDown={() => handleCommand("backward")}
-              onMouseUp={() => handleCommand("stop")}
-              disabled={!remoteEnabled}
-              className="control-btn"
-            >
-              ▾
-            </button>
+          <ControlButtons disabled={!remoteEnabled} />
+          
+          <div className="keyboard-controls">
+            <p>Keyboard Controls:</p>
+            <p>↑ Forward</p>
+            <p>↓ Backward</p>
+            <p>← Left</p>
+            <p>→ Right</p>
           </div>
         </div>
 
-        {/* Transcript Section */}
-        <div className="transcript">
-          <h2>Speech Transcript</h2>
-          <p>{speechTranscript}</p>
+        {/* Task Input Section */}
+        <div className="task-section">
+          <h2>Task Description</h2>
+          <form onSubmit={handleTaskSubmit} className="task-form">
+            <input
+              type="text"
+              value={task}
+              onChange={(e) => setTask(e.target.value)}
+              placeholder="Describe what you want the RC car to do... (default: following person)"
+              className="task-input"
+              disabled={isProcessing}
+            />
+            <button 
+              type="submit" 
+              className="task-submit"
+              disabled={isProcessing || !task.trim()}
+            >
+              {isProcessing ? 'Processing...' : 'Set Task'}
+            </button>
+          </form>
+          <p className="target-object">
+            Target Object: <span>{targetObject}</span>
+          </p>
         </div>
       </div>
 
@@ -236,7 +307,7 @@ const PersonDetection = () => {
                   top: `${Math.max(0, box.y1 - 24)}px`,
                 }}
               >
-                Person {index + 1} ({(box.confidence * 100).toFixed(1)}%)
+                {box.label} ({(box.confidence * 100).toFixed(1)}%)
               </span>
             </div>
           ))}
