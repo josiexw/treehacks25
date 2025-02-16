@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Raw Video Stream</title>
+    <style>
+        #video {
+            max-width: 100%;
+            width: auto;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <img id="video"/>
+    <script>
+        let ws = new WebSocket(`ws://${window.location.host}/raw_ws`);
+        let video = document.getElementById('video');
+        
+        ws.onmessage = function(event) {
+            let blob = new Blob([event.data], {type: 'image/jpeg'});
+            video.src = URL.createObjectURL(blob);
+        };
+        
+        ws.onclose = function() {
+            console.log('WebSocket closed');
+        };
+        
+        ws.onerror = function(err) {
+            console.error('WebSocket error:', err);
+        };
+    </script>
+</body>
+</html>

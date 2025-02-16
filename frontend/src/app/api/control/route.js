@@ -21,18 +21,19 @@ client.on('error', (err) => {
 export async function POST(request) {
     try {
         const { direction } = await request.json();
-        console.log(`Sending command: ${direction}`);
         
-        const message = Buffer.from(direction);
-        
-        // Broadcast the command
-        client.send(message, 0, message.length, PORT, BROADCAST_ADDRESS, (err) => {
-            if (err) {
-                console.error('Failed to broadcast command:', err);
-            } else {
-                console.log(`Successfully broadcasted "${direction}" to ${BROADCAST_ADDRESS}:${PORT}`);
-            }
+        // Forward the control command to the Python backend
+        const response = await fetch('http://localhost:7860/control', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ direction }),
         });
+
+        if (!response.ok) {
+            throw new Error('Failed to send command to backend');
+        }
 
         return NextResponse.json({ success: true, command: direction });
     } catch (error) {

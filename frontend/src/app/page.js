@@ -4,7 +4,7 @@ import PersonDetection from '../components/PersonDetection';
 
 export default function Home() {
   return (
-    <main className="h-screen w-screen overflow-hidden">
+    <main className="w-screen h-screen overflow-hidden m-0 p-0">
       <PersonDetection />
     </main>
   );

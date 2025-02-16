@@ -10,9 +10,14 @@
 }
 
 /* Base styles */
-html, body {
-  height: 100%;
+:root {
+  --real-vh: 100vh;
+  --real-vw: 100vw;
+}
+
+html, body, main {
   width: 100%;
+  height: 100%;
   margin: 0;
   padding: 0;
   overflow: hidden;
@@ -50,23 +55,24 @@ p {
 
 /* Layout */
 .container {
-  display: flex;
-  height: 100vh;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  box-sizing: border-box;
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
+  display: flex;
+  min-width: 100vw;
+  width: var(--real-vw);
+  height: var(--real-vh);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
 .left-panel {
-  flex: 0 0 40%;
-  height: 100vh;
+  flex: 0 0 500px;
+  min-height: 100vh;
+  height: var(--real-vh);
   margin: 0;
   display: flex;
   flex-direction: column;
@@ -79,9 +85,10 @@ p {
 }
 
 .video-container {
-  position: relative;
-  flex: 0 0 60%;
-  height: 100vh;
+  flex: 1;
+  min-height: 100vh;
+  height: var(--real-vh);
+  min-width: 0;
   margin: 0;
   padding: 0;
   background-color: black;
@@ -299,7 +306,7 @@ input:checked + .slider:before {
 }
 
 .target-object span {
-  color: #61dafb;
+  color: #ff6b6b;
   font-weight: bold;
 }
 
@@ -321,4 +328,32 @@ input:checked + .slider:before {
   color: #61dafb;
   font-weight: bold;
   margin-bottom: 8px;
+}
+
+.obstacles {
+  margin-top: 5px;
+  font-size: 14px;
+  color: #ddd;
+}
+
+.obstacles span {
+  color: #61dafb;  /* Reddish color for obstacles */
+  font-weight: bold;
+}
+
+.control-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.toggle-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;  /* Reduce gap between switch and text */
+}
+
+.toggle-group p {
+  margin: 0;  /* Remove default margins */
 }

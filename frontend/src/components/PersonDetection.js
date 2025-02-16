@@ -1,64 +1,23 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
-import * as tf from '@tensorflow/tfjs';
-import * as cocoSsd from '@tensorflow-models/coco-ssd';
+import React, { useRef, useState } from 'react';
 import ControlButtons from './ControlButtons';
 
 const PersonDetection = () => {
   const videoRef = useRef(null);
-  const [model, setModel] = useState(null);
-  const [humanBoxes, setHumanBoxes] = useState([]);
-  const [objectBoxes, setObjectBoxes] = useState([]);
   const [remoteEnabled, setRemoteEnabled] = useState(false);
   const [task, setTask] = useState("");
-  const [targetObject, setTargetObject] = useState('person');
+  const [targetObject, setTargetObject] = useState('entrapped survivor');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [obstacles, setObstacles] = useState(['obstacles']);
+  const [autonomousEnabled, setAutonomousEnabled] = useState(false);
 
-  // Screen & Video Display Scaling
-  const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 0;
-  const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 0;
-  // const videoWidth = screenWidth * (2 / 3);
-  // const videoHeight = screenHeight;
-
-  // Initialize model
-  useEffect(() => {
-    const loadModel = async () => {
-      try {
-        const loadedModel = await cocoSsd.load();
-        setModel(loadedModel);
-        console.log("🤖 COCO-SSD Model loaded successfully");
-      } catch (error) {
-        console.error("❌ Error loading model:", error);
-      }
-    };
-
-    loadModel();
-  }, []);
-
-  // Setup webcam
-  useEffect(() => {
-    const setupCamera = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          console.log("📹 Camera stream started successfully");
-        }
-      } catch (error) {
-        console.error("❌ Error accessing webcam:", error);
-      }
-    };
-
-    setupCamera();
-
-    return () => {
-      if (videoRef.current?.srcObject) {
-        const tracks = videoRef.current.srcObject.getTracks();
-        tracks.forEach(track => track.stop());
-        console.log("🛑 Camera stream stopped");
-      }
-    };
+  // Setup video stream from Python backend
+  React.useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.src = 'http://localhost:7860/video-feed';
+      console.log("📹 Video stream source set");
+    }
   }, []);
 
   const handleTaskSubmit = async (e) => {
@@ -67,7 +26,6 @@ const PersonDetection = () => {
 
     setIsProcessing(true);
     try {
-      // Parse the task using OpenAI
       const response = await fetch('/api/parse-task', {
         method: 'POST',
         headers: {
@@ -79,16 +37,8 @@ const PersonDetection = () => {
       if (!response.ok) throw new Error('Failed to parse task');
       
       const data = await response.json();
-      setTargetObject(data.targetObject);
-
-      // Broadcast the target object via UDP
-      await fetch('/api/control', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ direction: `target:${data.targetObject}` }),
-      });
+      setTargetObject(data.target);
+      setObstacles(data.obstacles);
 
     } catch (error) {
       console.error('Error processing task:', error);
@@ -97,85 +47,8 @@ const PersonDetection = () => {
     }
   };
 
-  // Modify the detection effect to handle target objects
-  useEffect(() => {
-    if (!model || !videoRef.current) return;
-
-    let animationFrameId;
-    
-    const detectFrame = async () => {
-      if (!videoRef.current || !model) return;
-
-      try {
-        const predictions = await model.detect(videoRef.current);
-        
-        // Get the actual video dimensions and container dimensions
-        const videoElement = videoRef.current;
-        const actualWidth = videoElement.videoWidth;
-        const actualHeight = videoElement.videoHeight;
-        
-        // Get the container dimensions
-        const containerElement = videoElement.parentElement;
-        const displayWidth = containerElement.offsetWidth;
-        const displayHeight = containerElement.offsetHeight;
-        
-        // Calculate the scaling factors based on how the video is displayed
-        const videoAspectRatio = actualWidth / actualHeight;
-        const containerAspectRatio = displayWidth / displayHeight;
-        
-        let scaleX, scaleY, offsetX = 0, offsetY = 0;
-        
-        if (containerAspectRatio > videoAspectRatio) {
-          // Video is letterboxed on the sides
-          const videoDisplayHeight = displayHeight;
-          const videoDisplayWidth = videoDisplayHeight * videoAspectRatio;
-          scaleX = videoDisplayWidth / actualWidth;
-          scaleY = displayHeight / actualHeight;
-          offsetX = (displayWidth - videoDisplayWidth) / 2;
-        } else {
-          // Video is letterboxed on top/bottom
-          const videoDisplayWidth = displayWidth;
-          const videoDisplayHeight = videoDisplayWidth / videoAspectRatio;
-          scaleX = displayWidth / actualWidth;
-          scaleY = videoDisplayHeight / actualHeight;
-          offsetY = (displayHeight - videoDisplayHeight) / 2;
-        }
-
-        // Filter and process detections based on target object
-        const detections = predictions.map(pred => ({
-          x1: Math.round(pred.bbox[0] * scaleX + offsetX),
-          y1: Math.round(pred.bbox[1] * scaleY + offsetY),
-          x2: Math.round((pred.bbox[0] + pred.bbox[2]) * scaleX + offsetX),
-          y2: Math.round((pred.bbox[1] + pred.bbox[3]) * scaleY + offsetY),
-          confidence: pred.score,
-          label: pred.class,
-          isTarget: targetObject && pred.class === targetObject
-        }));
-
-        // Split into target and non-target objects
-        const targetBoxes = detections.filter(det => det.isTarget);
-        const otherBoxes = detections.filter(det => !det.isTarget);
-
-        setHumanBoxes(targetBoxes);
-        setObjectBoxes(otherBoxes);
-      } catch (error) {
-        console.error("❌ Error during detection:", error);
-      }
-
-      animationFrameId = requestAnimationFrame(detectFrame);
-    };
-
-    detectFrame();
-
-    return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-    };
-  }, [model, targetObject]);
-
   // Add keyboard control effect
-  useEffect(() => {
+  React.useEffect(() => {
     const handleKeyDown = (e) => {
       if (!remoteEnabled) return;
 
@@ -225,119 +98,151 @@ const PersonDetection = () => {
     };
   }, [remoteEnabled]);
 
-  return (
-    <div className="container">
-      {/* Left Panel */}
-      <div className="left-panel">
-        {/* Controls Section */}
-        <div className="controls">
-          <h2>Motor Control</h2>
-          <label className="switch">
-            <input
-              type="checkbox"
-              checked={remoteEnabled}
-              onChange={() => setRemoteEnabled(!remoteEnabled)}
-            />
-            <span className="slider"></span>
-          </label>
-          <p>Remote Override: {remoteEnabled ? "ON" : "OFF"}</p>
+  const handleAutonomousControlToggle = async (enabled) => {
+    try {
+      const response = await fetch('/api/autonomous-control', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ enabled }),
+      });
 
-          <ControlButtons disabled={!remoteEnabled} />
-          
-          <div className="keyboard-controls">
-            <p>Keyboard Controls:</p>
-            <p>↑ Forward</p>
-            <p>↓ Backward</p>
-            <p>← Left</p>
-            <p>→ Right</p>
+      if (!response.ok) {
+        throw new Error('Failed to update autonomous control state');
+      }
+      
+      const data = await response.json();
+      console.log('Autonomous control response:', data);
+      setAutonomousEnabled(Boolean(data.autonomous));
+      setRemoteEnabled(Boolean(data.motor));
+    } catch (error) {
+      console.error('Error updating autonomous control:', error);
+      setAutonomousEnabled(!enabled);
+    }
+  };
+
+  const handleMotorControlToggle = async (enabled) => {
+    try {
+      const response = await fetch('/api/motor-control', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ enabled }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update remote control state');
+      }
+      
+      const data = await response.json();
+      console.log('Motor control response:', data);
+      setRemoteEnabled(Boolean(data.motor));
+      setAutonomousEnabled(Boolean(data.autonomous));
+    } catch (error) {
+      console.error('Error updating remote control:', error);
+      setRemoteEnabled(!enabled);
+    }
+  };
+
+  React.useEffect(() => {
+    const updateRealViewportSize = () => {
+      // Get the real viewport size
+      const vh = window.innerHeight;
+      const vw = window.innerWidth;
+      
+      // Update CSS variables
+      document.documentElement.style.setProperty('--real-vh', `${vh}px`);
+      document.documentElement.style.setProperty('--real-vw', `${vw}px`);
+    };
+
+    // Initial update
+    updateRealViewportSize();
+
+    // Update on resize
+    window.addEventListener('resize', updateRealViewportSize);
+    
+    // Cleanup
+    return () => window.removeEventListener('resize', updateRealViewportSize);
+  }, []);
+
+  return (
+    <>
+      <div className="container">
+        <div className="left-panel">
+          <div className="controls">
+            <h2>Control Mode</h2>
+            <div className="control-toggles flex flex-col items-center space-y-4 w-full">
+              <div className="toggle-group flex items-center justify-center gap-3 w-full">
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={remoteEnabled}
+                    onChange={(e) => handleMotorControlToggle(e.target.checked)}
+                  />
+                  <span className="slider"></span>
+                </label>
+                <p className="my-0">Remote Override: {remoteEnabled ? "ON" : "OFF"}</p>
+              </div>
+              
+              <div className="toggle-group flex items-center justify-center gap-3 w-full">
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={autonomousEnabled}
+                    onChange={(e) => handleAutonomousControlToggle(e.target.checked)}
+                  />
+                  <span className="slider"></span>
+                </label>
+                <p className="my-0">Autonomous Mode: {autonomousEnabled ? "ON" : "OFF"}</p>
+              </div>
+            </div>
+            
+            <ControlButtons disabled={!remoteEnabled} />
+            
+          </div>
+
+          <div className="task-section">
+            <h2>Task Description</h2>
+            <form onSubmit={handleTaskSubmit} className="task-form">
+              <input
+                type="text"
+                value={task}
+                onChange={(e) => setTask(e.target.value)}
+                placeholder="Describe what object to track and what to avoid..."
+                className="task-input"
+                disabled={isProcessing}
+              />
+              <button 
+                type="submit" 
+                className="task-submit"
+                disabled={isProcessing || !task.trim()}
+              >
+                {isProcessing ? 'Processing...' : 'Set Task'}
+              </button>
+            </form>
+            <p className="target-object">
+              Target Object: <span>{targetObject}</span>
+            </p>
+            {obstacles.length > 0 && (
+              <p className="obstacles">
+                Avoiding: <span>{obstacles.join(', ')}</span>
+              </p>
+            )}
           </div>
         </div>
 
-        {/* Task Input Section */}
-        <div className="task-section">
-          <h2>Task Description</h2>
-          <form onSubmit={handleTaskSubmit} className="task-form">
-            <input
-              type="text"
-              value={task}
-              onChange={(e) => setTask(e.target.value)}
-              placeholder="Describe what you want the RC car to do... (default: following person)"
-              className="task-input"
-              disabled={isProcessing}
-            />
-            <button 
-              type="submit" 
-              className="task-submit"
-              disabled={isProcessing || !task.trim()}
-            >
-              {isProcessing ? 'Processing...' : 'Set Task'}
-            </button>
-          </form>
-          <p className="target-object">
-            Target Object: <span>{targetObject}</span>
-          </p>
+        <div className="video-container">
+          <img
+            ref={videoRef}
+            src="http://localhost:7860/video-feed"
+            alt="Video stream"
+            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+          />
         </div>
       </div>
-
-      {/* Right Panel (Video Stream) */}
-      <div className="video-container">
-        <video
-          ref={videoRef}
-          crossOrigin="anonymous"
-          autoPlay
-          playsInline
-        />
-        {/* Bounding boxes overlay */}
-        <div className="bounding-box-overlay">
-          {humanBoxes.map((box, index) => (
-            <div key={index}>
-              <div
-                className="bounding-box-red"
-                style={{
-                  left: `${box.x1}px`,
-                  top: `${box.y1}px`,
-                  width: `${box.x2 - box.x1}px`,
-                  height: `${box.y2 - box.y1}px`,
-                }}
-              />
-              <span
-                className="bounding-box-label-red"
-                style={{
-                  left: `${box.x1}px`,
-                  top: `${Math.max(0, box.y1 - 24)}px`,
-                }}
-              >
-                {box.label} ({(box.confidence * 100).toFixed(1)}%)
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="bounding-box-overlay">
-          {objectBoxes.map((box, index) => (
-            <div key={index}>
-              <div
-                className="bounding-box-blue"
-                style={{
-                  left: `${box.x1}px`,
-                  top: `${box.y1}px`,
-                  width: `${box.x2 - box.x1}px`,
-                  height: `${box.y2 - box.y1}px`,
-                }}
-              />
-              <span
-                className="bounding-box-label-blue"
-                style={{
-                  left: `${box.x1}px`,
-                  top: `${Math.max(0, box.y1 - 24)}px`,
-                }}
-              >
-                {box.label} ({(box.confidence * 100).toFixed(1)}%)
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
+    </>
   );
 };
 

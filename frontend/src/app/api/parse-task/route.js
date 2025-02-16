@@ -30,7 +30,13 @@ export async function POST(request) {
             messages: [
                 {
                     role: "system",
-                    content: `You are a helper that identifies target objects from user tasks. You should return ONLY ONE object from this list: ${COCO_CLASSES.join(', ')}. Return exactly the same spelling as in the list. If no relevant object is found, return "none".`
+                    content: `You are a helper that identifies target objects and potential obstacles from user tasks. 
+                    Return a JSON object with two fields:
+                    1. "target": The main object to track
+                    2. "obstacles": Array of objects to avoid
+                    Keep descriptions simple and clear. No adjectives, add articles of objects (e.g. "a cup"), and add as many redundancies as possible (e.g. for limb, add "a arm", "a hand", "a finger").
+
+                    Example: {"target": "a cup", "obstacles": ["a chair", "a laptop"]}`
                 },
                 {
                     role: "user",
@@ -38,15 +44,29 @@ export async function POST(request) {
                 }
             ],
             temperature: 0,
-            max_tokens: 50
+            max_tokens: 100
         });
 
-        const targetObject = response.choices[0].message.content.toLowerCase();
+        const parsed = JSON.parse(response.choices[0].message.content);
         
-        // Validate that the response is in our list of classes
-        const validObject = COCO_CLASSES.includes(targetObject) ? targetObject : 'none';
+        // Send the parsed objects to the Python backend
+        const backendResponse = await fetch('http://localhost:7860/update-prompt', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                prompt: `[${parsed.target}, ${parsed.obstacles.join(', ')}]`,
+                target: parsed.target,
+                obstacles: parsed.obstacles
+            })
+        });
 
-        return NextResponse.json({ targetObject: validObject });
+        if (!backendResponse.ok) {
+            throw new Error('Failed to update backend prompt');
+        }
+
+        return NextResponse.json(parsed);
     } catch (error) {
         console.error('Error parsing task:', error);
         return NextResponse.json(

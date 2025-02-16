@@ -1,0 +1,52 @@
+<html></html>
+<head>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
+        }
+        #camera_image {
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain;
+        }
+    </style>
+    <script type="text/javascript">
+        function jpeg_binary_to_base64(buffer) {
+            var base64 = btoa(new Uint8Array(buffer).reduce(function (data, byte) {
+                return data + String.fromCharCode(byte);
+            }, ''));
+            return "data:image/jpeg;base64," + base64;
+        }
+        
+        window.onload = function() {
+            // Connect to the main detection websocket instead of detection_ws
+            var ws = new WebSocket("ws://" + location.host + "/ws");
+            
+            ws.onopen = function() {
+                console.log("Connected to detection websocket");
+            };
+            
+            ws.onclose = function() {
+                console.log("Disconnected from detection websocket");
+            };
+            
+            ws.onmessage = function(event) {
+                var camera_image = document.getElementById("camera_image");
+                var reader = new FileReader();
+                reader.readAsDataURL(event.data);
+                reader.onloadend = function() {
+                    camera_image.src = reader.result;
+                }
+            };
+        };
+    </script>
+</head>
+<body>
+    <img id="camera_image" src="" alt="Detection Feed"/>
+</body>
+</html>
